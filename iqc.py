@@ -6,17 +6,13 @@ import os
 # Sayfa Genişliği ve Mobil Uyumluluk Ayarı
 st.set_page_config(page_title="Sabah QC Takip Paneli", layout="wide", initial_sidebar_state="expanded")
 
-st.title("🔬 Sabah İç Kalite Kontrol Takip Paneli")
+st.title("🔬 İç Kalite Kontrol Takip Paneli")
 st.caption("Cihaz bazlı odaklanma ve anlık aksiyon takibi")
 
 # --- 1. VERİ İŞLEME FONKSİYONU ---
 def qc_verisi_hazirla(df, sd_siniri):
-    benim_cihazlarim = ["INFINTY_c8000_0", "INFINTY_c8000_1", "INFINTY_c8000_2", "INFINTY_c8000_3", "INFINTY_c8000_4", "INFINTY_c8000_5", "INFINTY_c8000_6", "STANDALONE", "COBAS_E601_MRKZ",
-                        "COBAS_6000_Idrar"]
-    benim_kontrol_adlarım = ["PCCC1", "PCCC2",  "PC TM1", "PC TM2", "PC U1", "PC U2", "PC THYRO1", "PC THYRO2", 
-                            "PC AMH1", "PC AMH2", "PC CARD1", "PCCARD2", "PC G1", "PC G2", "PC V1", "PC V2",
-                           "PC VITDT1", "PC VITDT2", "TDMC1", "TDMC2", "TDMC3", "PC ISD1", "PC ISD2", "PC ISD3", "PC MM1", "PC MM2", "AMM-N", "AMM-P", "CYS-1", "CYS-2", "CYS-3", "ID PCCC1",
-                           "ID PCCC2", "PN PUC", "PP PUC", "PC PCCC1", "PC PCCC2", "PC A-CCP1", "PC A-CCP2", "B2MG1", "B2MG2", "ZNCRC01", "ZNCRC02"]
+    benim_cihazlarim = ["INFINTY_c8000_0", "INFINTY_c8000_1", "INFINTY_c8000_2", "INFINTY_c8000_3", "INFINTY_c8000_4", "INFINTY_c8000_5", "INFINTY_c8000_6", "STANDALONE", "COBAS_E601_MRKZ", "COBAS_6000_Idrar"]
+    benim_kontrol_adlarım = ["PCCC1", "PCCC2",  "PC TM1", "PC TM2", "PC U1", "PC U2", "PC THYRO1", "PC THYRO2", "PC AMH1", "PC AMH2", "PC CARD1", "PCCARD2", "PC G1", "PC G2", "PC V1", "PC V2", "PC VITDT1", "PC VITDT2", "TDMC1", "TDMC2", "TDMC3", "PC ISD1", "PC ISD2", "PC ISD3", "PC MM1", "PC MM2", "AMM-N", "AMM-P", "CYS-1", "CYS-2", "CYS-3", "ID PCCC1", "ID PCCC2", "PN PUC", "PP PUC", "PC PCCC1", "PC PCCC2", "PC A-CCP1", "PC A-CCP2", "B2MG1", "B2MG2", "ZNCRC01", "ZNCRC02"]
     
     # Filtreleme
     filtreli_df = df[df['Cihaz'].isin(benim_cihazlarim) & df['Kontrol Adı'].isin(benim_kontrol_adlarım)].copy()
@@ -27,9 +23,7 @@ def qc_verisi_hazirla(df, sd_siniri):
     if hatali_kontroller.empty:
         return pd.DataFrame()
         
-    # En yüksek mutlak sapmayı üste getirme
-    #hatali_kontroller['Geçici_Mutlak_SD'] = hatali_kontroller['Sonuç SD'].abs()
-    #sirali_liste = hatali_kontroller.sort_values(by='Geçici_Mutlak_SD', ascending=False)
+    # Sizin tercih ettiğiniz Test ismine göre alfabetik sıralama
     sirali_liste = hatali_kontroller.sort_values(by='Test', ascending=True)
     
     # Sadeleştirme (Cihaz, Modül ve Test bazında teke düşürme)
@@ -63,7 +57,20 @@ with st.sidebar:
 
 # --- 3. ANA EKRAN MANTIĞI VE CİHAZ ODAKLI TASARIM ---
 if df_raw is not None:
-    # Tüm ihlalli veriyi hazırla
+    # --- Tarih bilgisini hatasız yakalama alanı ---
+    tarih_str = ""
+    if 'Çalışma Tarihi' in df_raw.columns:
+        gecerli_satirlar = df_raw['Çalışma Tarihi'].dropna()
+        if not gecerli_satirlar.empty:
+            ham_tarih = gecerli_satirlar.iloc[0]
+            try:
+                # Veri tipi ne olursa olsun GG.AA.YYYY formatına çeviriyoruz
+                tarih_str = f" ({pd.to_datetime(ham_tarih).strftime('%d.%m.%Y')})"
+            except:
+                # Beklenmeyen bir metin formatı gelirse hata vermemesi için string halini basıyoruz
+                tarih_str = f" ({str(ham_tarih)})"
+    
+    # Raporu kullanıcının seçtiği sınıra göre üret
     tum_rapor_df = qc_verisi_hazirla(df_raw, sd_siniri)
 
     if tum_rapor_df.empty:
@@ -83,11 +90,12 @@ if df_raw is not None:
                 ihlalli_cihazlar,
                 help="Sadece seçtiğiniz cihaza ait modüller listelenir."
             )
-
+        
         # Veriyi sadece seçilen cihaza göre filtrele
         cihaz_df = tum_rapor_df[tum_rapor_df['Cihaz'] == secilen_cihaz].copy()
 
-        st.subheader(f"🤖 {secilen_cihaz} — İhlalli Modül ve Test Listesi")
+        # Tarih bilgisi eklenmiş dinamik başlık alanı
+        st.subheader(f"🤖 {secilen_cihaz} — İhlalli Modül ve Test Listesi{tarih_str}")
         st.info(f"Bu cihazda toplam **{len(cihaz_df)}** sorunlu kit/test kombinasyonu incelenmeyi bekliyor.")
 
         # Seçilen cihaza ait kartları ekrana basıyoruz
@@ -96,7 +104,6 @@ if df_raw is not None:
             test = row['Test']
             sd_degeri = row['Sonuç SD']
             
-            # Global index kullanarak her test için benzersiz bir hafıza key'i oluşturuyoruz
             unique_key = f"{secilen_cihaz}_{modul}_{test}_{index}"
             
             if unique_key not in st.session_state.aksiyonlar:
@@ -104,8 +111,6 @@ if df_raw is not None:
                     "kalibrasyon": False, "maskeleme": False, "yeni_kit": False, "not": ""
                 }
             
-            # Başlık Tasarımı: Cihaz adını gizledik çünkü zaten üst başlıkta yazıyor. 
-            # Doğrudan odaklanılması gereken MODÜL ve TEST adını öne çıkardık.
             renk = "🔴" if sd_degeri > 0 else "🔵"
             kart_basligi = f"{renk} Modül: {modul} ➡️ Test: {test} | SD: {sd_degeri:+.2f}"
             
@@ -131,8 +136,6 @@ if df_raw is not None:
         if st.button("Tüm Cihazların Değerlendirmesini Derle ve Excel Raporu Hazırla"):
             aksiyon_listesi = []
             
-            # Excel çıktısı alırken filtrelenmiş cihazı değil, TÜM cihazları tarıyoruz ki 
-            # diğer cihazlarda yaptığınız eski işaretlemeler de kaybolmasın.
             for index, row in tum_rapor_df.iterrows():
                 u_key = f"{row['Cihaz']}_{row['Cihaz Modül No']}_{row['Test']}_{index}"
                 
@@ -162,9 +165,9 @@ if df_raw is not None:
             st.download_button(
                 label="📥 Tüm Listeyi Excel Olarak İndir",
                 data=buffer.getvalue(),
-                file_name="Sabah_QC_Aksiyon_Raporu.xlsx",
+                file_name="Rutin_Internal_QC_Aksiyon_Raporu.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             st.success("Tüm cihazlardaki değerlendirmeleriniz tek bir dosyada birleştirildi!")
 else:
-    st.info("Lütfen çalışmak istediğiniz excel dosyasını uygulamanın bulunduğu klasöre 'iqc_060726.xlsx' adıyla kaydedin.")
+    st.info("Lütfen çalışmak istediğiniz excel dosyasını uygulamanın bulunduğu klasöre yükleyin.")
