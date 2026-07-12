@@ -65,7 +65,7 @@ if df_raw is not None:
             ham_tarih = gecerli_satirlar.iloc[0]
             try:
                 # Veri tipi ne olursa olsun GG.AA.YYYY formatına çeviriyoruz
-                tarih_str = f" ({pd.to_datetime(ham_tarih).strftime('%d.%m.%Y')})"
+                tarih_str = f" ({pd.to_datetime(ham_tarih, dayfirst=True).strftime('%d.%m.%Y')})"
             except:
                 # Beklenmeyen bir metin formatı gelirse hata vermemesi için string halini basıyoruz
                 tarih_str = f" ({str(ham_tarih)})"
