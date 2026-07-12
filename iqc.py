@@ -108,24 +108,24 @@ if df_raw is not None:
             
             if unique_key not in st.session_state.aksiyonlar:
                 st.session_state.aksiyonlar[unique_key] = {
-                    "kalibrasyon": False, "maskeleme": False, "yeni_kit": False, "not": ""
+                    "kalibrasyon": False, "maskeleme": False, "kontrol_tekrari": False, "not": ""
                 }
             
             renk = "🔴" if sd_degeri > 0 else "🔵"
             kart_basligi = f"{renk} Modül: {modul} ➡️ Test: {test} | SD: {sd_degeri:+.2f}"
             
             ak = st.session_state.aksiyonlar[unique_key]
-            if ak["kalibrasyon"] or ak["maskeleme"] or ak["yeni_kit"]:
+            if ak["kalibrasyon"] or ak["maskeleme"] or ak["kontrol_tekrari"]:
                 kart_basligi += "  ✅ (İşlem Yapıldı)"
 
             with st.expander(kart_basligi):
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    ak["kalibrasyon"] = st.checkbox("Kalibrasyon", value=ak["kalibrasyon"], key=f"cal_{unique_key}")
+                    ak["kalibrasyon"] = st.checkbox("Kalibrasyon_OK", value=ak["kalibrasyon"], key=f"cal_{unique_key}")
                 with c2:
-                    ak["maskeleme"] = st.checkbox("Maskele (Kapat)", value=ak["maskeleme"], key=f"mask_{unique_key}")
+                    ak["maskeleme"] = st.checkbox("Maskeli (Kapalı)", value=ak["maskeleme"], key=f"mask_{unique_key}")
                 with c3:
-                    ak["yeni_kit"] = st.checkbox("Yeni Kit / Lot", value=ak["yeni_kit"], key=f"kit_{unique_key}")
+                    ak["kontrol_tekrari"] = st.checkbox("Kontrol tekrarı_OK", value=ak["kontrol_tekrari"], key=f"kit_{unique_key}")
                 
                 ak["not"] = st.text_input("Açıklama / Durum Notu:", value=ak["not"], key=f"txt_{unique_key}")
 
@@ -144,7 +144,7 @@ if df_raw is not None:
                     durumlar = []
                     if ak["kalibrasyon"]: durumlar.append("Kalibrasyon Yapıldı")
                     if ak["maskeleme"]: durumlar.append("Test Maskelendi")
-                    if ak["yeni_kit"]: durumlar.append("Yeni Kitle Tekrarlandı")
+                    if ak["kontrol_tekrari"]: durumlar.append("Kontrol Tekrarlandı")
                     
                     aksiyon_str = ", ".join(durumlar) if durumlar else "Aksiyon Alınmadı"
                     if ak["not"]:
