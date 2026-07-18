@@ -118,6 +118,12 @@ def qc_verisi_hazirla(df, sd_siniri):
 varsayilan_dosya = "iqc_060726.xlsx"
 df_raw = None
 
+# Excel'i okurken en üstteki tamamen boş satırları otomatik atlayan yardımcı fonksiyon
+def temiz_excel_oku(dosya_objesi):
+    # skiprows=lambda x: x in [0, 1] ifadesi Excel'deki en üstteki boş satırları (1. ve 2. satır gibi) atlar
+    # header=0 diyerek boşluklardan sonra denk gelen ilk dolu satırı kolon başlığı yapar
+    return pd.read_excel(dosya_objesi, header=0, skiprows=lambda x: x in [0, 1])
+
 with st.sidebar:
     st.header("⚙️ Kontrol Paneli")
     sd_siniri = st.number_input("Hedef SD Sınırı Filtresi", min_value=0.0, max_value=5.0, value=1.5, step=0.1)
@@ -126,12 +132,13 @@ with st.sidebar:
     if os.path.exists(varsayilan_dosya):
         st.success(f"🔄 '{varsayilan_dosya}' otomatik yüklendi.")
         if 'otomatik_veri' not in st.session_state:
-            st.session_state.otomatik_veri = pd.read_excel(varsayilan_dosya)
+            st.session_state.otomatik_veri = temiz_excel_oku(varsayilan_dosya)
         df_raw = st.session_state.otomatik_veri
     else:
         yuklenen_dosya = st.file_uploader("Excel dosyasını buraya yükleyin:", type=["xlsx"])
         if yuklenen_dosya is not None:
-            df_raw = pd.read_excel(yuklenen_dosya)
+            # Aynı temiz okuma fonksiyonunu yüklenen dosya için de çalıştırıyoruz
+            df_raw = temiz_excel_oku(yuklenen_dosya)
 
 # --- 3. ANA EKRAN MANTIĞI VE CİHAZ ODAKLI TASARIM ---
 if df_raw is not None:
