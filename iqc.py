@@ -118,11 +118,35 @@ def qc_verisi_hazirla(df, sd_siniri):
 varsayilan_dosya = "iqc_060726.xlsx"
 df_raw = None
 
-# Excel'i okurken en üstteki tamamen boş satırları otomatik atlayan yardımcı fonksiyon
+# Excel'i okurken en üstteki tamamen boş satırları otomatik atlayan ve başlık satırını dinamik bulan yardımcı fonksiyon
 def temiz_excel_oku(dosya_objesi):
-    # skiprows=lambda x: x in [0, 1] ifadesi Excel'deki en üstteki boş satırları (1. ve 2. satır gibi) atlar
-    # header=0 diyerek boşluklardan sonra denk gelen ilk dolu satırı kolon başlığı yapar
-    return pd.read_excel(dosya_objesi, header=0, skiprows=lambda x: x in [0, 1])
+    # Excel dosyasını başlangıçta başlık olmadan oku
+    df_raw = pd.read_excel(dosya_objesi, header=None)
+    
+    # Kolon isimlerinin bulunduğu satırı (örneğin 'Cihaz' içeren ilk satır) dinamik olarak bul
+    header_idx = None
+    for idx, row in df_raw.iterrows():
+        if any(isinstance(val, str) and "Cihaz" in val for val in row.values):
+            header_idx = idx
+            break
+            
+    if header_idx is None:
+        raise ValueError("Excel dosyasında 'Cihaz' sütunu bulunamadı. Lütfen doğru dosyayı yüklediğinizden emin olun.")
+        
+    # Kolon isimlerini al ve temizle
+    columns = df_raw.iloc[header_idx].tolist()
+    columns = [col.strip() if isinstance(col, str) else col for col in columns]
+    
+    # Başlık satırının altındaki veriyi al
+    df_data = df_raw.iloc[header_idx + 1:].copy()
+    df_data.columns = columns
+    
+    # 'Cihaz' sütunu boş olan satırları filtrele ve indeksi sıfırla
+    df_data = df_data.dropna(subset=['Cihaz'])
+    df_data = df_data.reset_index(drop=True)
+    
+    return df_data
+
 
 with st.sidebar:
     st.header("⚙️ Kontrol Paneli")
