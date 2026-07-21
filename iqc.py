@@ -28,19 +28,16 @@ def qc_verisi_hazirla(df, sd_siniri):
 
     analiz_listesi = []
     
-    # Testleri 'Cihaz', 'Cihaz Modül No' ve 'Test' düzeyinde grupluyoruz (Tek kartta birleştirmek için)
+    # Testleri 'Cihaz', 'Cihaz Modül No' ve 'Test' düzeyinde grupluyoruz
     test_gruplari = filtreli_df.groupby(['Cihaz', 'Cihaz Modül No', 'Test'])
     
     for (cihaz, modul, test), test_grup in test_gruplari:
-        
-        # Bu teste ait kaç farklı kontrol seviyesi (PC V1, PC V2 vs.) çalışılmış?
         seviyeler = test_grup['Kontrol Adı'].unique()
         
         seviye_analizleri = {}
         toplam_ihlalli_seviye_sayisi = 0
         cozulen_seviye_sayisi = 0
         
-        # Her bir kontrol seviyesini kendi içinde kronolojik olarak inceliyoruz
         for seviye in seviyeler:
             seviye_grup = test_grup[test_grup['Kontrol Adı'] == seviye]
             calismalar = seviye_grup.to_dict('records')
@@ -53,14 +50,11 @@ def qc_verisi_hazirla(df, sd_siniri):
                 if pd.isna(sd_val):
                     continue
                 
-                # İlgili seviyenin ilk ihlalini yakala
                 if ihlalli_calisma is None and abs(sd_val) > sd_siniri:
                     ihlalli_calisma = calisma
-                # İlgili seviyenin ihlalden sonra yapılmış başarılı tekrarını yakala
                 elif ihlalli_calisma is not None and abs(sd_val) <= sd_siniri:
                     basarili_tekrar = calisma
             
-            # Eğer bu seviyede ihlal varsa analize dahil et
             if ihlalli_calisma is not None:
                 toplam_ihlalli_seviye_sayisi += 1
                 if basarili_tekrar is not None:
@@ -77,18 +71,14 @@ def qc_verisi_hazirla(df, sd_siniri):
                         'Durum': 'Sorunlu'
                     }
 
-        # Eğer teste ait hiçbir seviyede ihlal yoksa bu testi listeye eklemiyoruz
         if toplam_ihlalli_seviye_sayisi == 0:
             continue
             
-        # Karar Mekanizması:
-        # İhlal veren tüm seviyelerin başarılı bir tekrarı yapılmışsa -> Durum: Otomatik_OK
         if toplam_ihlalli_seviye_sayisi == cozulen_seviye_sayisi:
             durum = 'Otomatik_OK'
         else:
             durum = 'Sorunlu'
             
-        # Görsel gösterim için SD metnini inşa ediyoruz
         sd_detay_listesi = []
         for sev, veri in seviye_analizleri.items():
             if veri['Durum'] == 'Cozuldu':
@@ -114,16 +104,13 @@ def qc_verisi_hazirla(df, sd_siniri):
     return final_df
 
 
-# --- 2. DOSYA BULMA VE SESSON_STATE HAFIZASI ---
+# --- 2. DOSYA BULMA VE SESSION_STATE HAFIZASI ---
 varsayilan_dosya = "iqc_060726.xlsx"
 df_raw = None
 
-# Excel'i okurken en üstteki tamamen boş satırları otomatik atlayan ve başlık satırını dinamik bulan yardımcı fonksiyon
 def temiz_excel_oku(dosya_objesi):
-    # Excel dosyasını başlangıçta başlık olmadan oku
     df_raw = pd.read_excel(dosya_objesi, header=None)
     
-    # Kolon isimlerinin bulunduğu satırı (örneğin 'Cihaz' içeren ilk satır) dinamik olarak bul
     header_idx = None
     for idx, row in df_raw.iterrows():
         if any(isinstance(val, str) and "Cihaz" in val for val in row.values):
@@ -133,15 +120,12 @@ def temiz_excel_oku(dosya_objesi):
     if header_idx is None:
         raise ValueError("Excel dosyasında 'Cihaz' sütunu bulunamadı. Lütfen doğru dosyayı yüklediğinizden emin olun.")
         
-    # Kolon isimlerini al ve temizle
     columns = df_raw.iloc[header_idx].tolist()
     columns = [col.strip() if isinstance(col, str) else col for col in columns]
     
-    # Başlık satırının altındaki veriyi al
     df_data = df_raw.iloc[header_idx + 1:].copy()
     df_data.columns = columns
     
-    # 'Cihaz' sütunu boş olan satırları filtrele ve indeksi sıfırla
     df_data = df_data.dropna(subset=['Cihaz'])
     df_data = df_data.reset_index(drop=True)
     
@@ -151,6 +135,9 @@ def temiz_excel_oku(dosya_objesi):
 with st.sidebar:
     st.header("⚙️ Kontrol Paneli")
     sd_siniri = st.number_input("Hedef SD Sınırı Filtresi", min_value=0.0, max_value=5.0, value=1.5, step=0.1)
+    
+    # YENİ FİLTRE: Sadece müdahale bekleyen aktif sorunlu testleri göster
+    sadece_bekleyenler = st.toggle("🔍 Sadece Müdahale Bekleyenleri Göster", value=False, help="Çözülmüş veya onaylanmış testleri ekrandan gizler.")
     st.markdown("---")
     
     if os.path.exists(varsayilan_dosya):
@@ -161,7 +148,6 @@ with st.sidebar:
     else:
         yuklenen_dosya = st.file_uploader("Excel dosyasını buraya yükleyin:", type=["xlsx"])
         if yuklenen_dosya is not None:
-            # Aynı temiz okuma fonksiyonunu yüklenen dosya için de çalıştırıyoruz
             df_raw = temiz_excel_oku(yuklenen_dosya)
 
 # --- 3. ANA EKRAN MANTIĞI VE CİHAZ ODAKLI TASARIM ---
@@ -212,36 +198,53 @@ if df_raw is not None:
             
             unique_key = f"{secilen_cihaz}_{modul}_{test}_{index}"
             
+            # Aksiyon durumları hafızası
             if unique_key not in st.session_state.aksiyonlar:
                 st.session_state.aksiyonlar[unique_key] = {
-                    "kalibrasyon": False, 
+                    "kalib_kontrol_ok": True if durum == 'Otomatik_OK' else False, 
                     "maskeleme": False, 
-                    "kontrol_tekrari": True if durum == 'Otomatik_OK' else False, 
-                    "not": "Sistem tarafından tespit edilen başarılı seviye tekrarları." if durum == 'Otomatik_OK' else ""
+                    "karar_devam": False, 
+                    "not": "Sistem tarafından tespit edilen başarılı seviye tekrarı." if durum == 'Otomatik_OK' else ""
                 }
             
-            # Başlık Noktası ve Renk Kuralları
+            ak = st.session_state.aksiyonlar[unique_key]
+
+            # DİNAMİK RENK VE DURUM TESPİTİ
             if durum == 'Otomatik_OK':
                 renk = "🟢"
-                kart_basligi = f"{renk} Modül: {modul} ➡️ Test: {test} | SD: {sd_yazisi} ✅ (Tekrarı OK)"
+                durum_etiketi = " ✅ (Tekrarı OK)"
+                islem_tamam = True
+            elif ak["kalib_kontrol_ok"]:
+                renk = "🟢"
+                durum_etiketi = " ✅ (Kalibrasyon/Kontrol OK)"
+                islem_tamam = True
+            elif ak["karar_devam"]:
+                renk = "🟡" # Sarı / Zümrüt dönüşüm
+                durum_etiketi = " 🟡 (Karar: Devam)"
+                islem_tamam = True
+            elif ak["maskeleme"]:
+                renk = "🔴" if "-" not in sd_yazisi else "🔵"
+                durum_etiketi = " ⛔ (Maskelendi)"
+                islem_tamam = True
             else:
-                # Durum sorunluysa ve birden fazla seviye varsa, ilk ihlalli seviyenin SD değerine göre rengi seçiyoruz
-                renk = "🔴" if "-" not in sd_yazisi.split(" ")[1] else "🔵"
-                kart_basligi = f"{renk} Modül: {modul} ➡️ Test: {test} | SD: {sd_yazisi}"
-            
-            ak = st.session_state.aksiyonlar[unique_key]
-            if ak["kalibrasyon"] or ak["maskeleme"] or ak["kontrol_tekrari"]:
-                if durum != 'Otomatik_OK':
-                    kart_basligi += "  ✅ (İşlem Yapıldı)"
+                renk = "🔵" if "-" in sd_yazisi else "🔴"
+                durum_etiketi = ""
+                islem_tamam = False
+
+            # FİLTRELEME: Eğer "Sadece Müdahale Bekleyenleri Göster" açık ve işlem tamamlanmışsa kartı atla
+            if sadece_bekleyenler and islem_tamam:
+                continue
+
+            kart_basligi = f"{renk} Modül: {modul} ➡️ Test: {test} | SD: {sd_yazisi}{durum_etiketi}"
 
             with st.expander(kart_basligi):
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    ak["kalibrasyon"] = st.checkbox("Kalibrasyon_OK", value=ak["kalibrasyon"], key=f"cal_{unique_key}")
+                    ak["kalib_kontrol_ok"] = st.checkbox("Kalibrasyon/Kontrol OK", value=ak["kalib_kontrol_ok"], key=f"cal_cnt_{unique_key}")
                 with c2:
                     ak["maskeleme"] = st.checkbox("Maskeli (Kapalı)", value=ak["maskeleme"], key=f"mask_{unique_key}")
                 with c3:
-                    ak["kontrol_tekrari"] = st.checkbox("Kontrol tekrarı_OK", value=ak["kontrol_tekrari"], key=f"kit_{unique_key}")
+                    ak["karar_devam"] = st.checkbox("Karar: Devam", value=ak["karar_devam"], key=f"devam_{unique_key}")
                 
                 ak["not"] = st.text_input("Açıklama / Durum Notu:", value=ak["not"], key=f"txt_{unique_key}")
 
@@ -258,9 +261,9 @@ if df_raw is not None:
                 if u_key in st.session_state.aksiyonlar:
                     ak = st.session_state.aksiyonlar[u_key]
                     durumlar = []
-                    if ak["kalibrasyon"]: durumlar.append("Kalibrasyon Yapıldı")
+                    if ak["kalib_kontrol_ok"]: durumlar.append("Kalibrasyon/Kontrol OK")
+                    if ak["karar_devam"]: durumlar.append("Karar: Devam (Çalışmaya Verildi)")
                     if ak["maskeleme"]: durumlar.append("Test Maskelendi")
-                    if ak["kontrol_tekrari"]: durumlar.append("Kontrol Tekrarlandı")
                     
                     aksiyon_str = ", ".join(durumlar) if durumlar else "Aksiyon Alınmadı"
                     if ak["not"]:
@@ -281,10 +284,14 @@ if df_raw is not None:
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 çıktı_df.to_excel(writer, index=False, sheet_name='Sabah_Aksiyon_Raporu')
             
+            # Dinamik dosya adı belirleme
+            tarih_eki = tarih_str.replace("(", "").replace(")", "").strip() if tarih_str else "Rutin"
+            dosya_adi = f"QC_Aksiyon_Raporu_{tarih_eki}.xlsx"
+            
             st.download_button(
                 label="📥 Tüm Listeyi Excel Olarak İndir",
                 data=buffer.getvalue(),
-                file_name="Rutin_Internal_QC_Aksiyon_Raporu.xlsx",
+                file_name=dosya_adi,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             st.success("Tüm cihazlardaki değerlendirmeleriniz tek bir dosyada birleştirildi!")
