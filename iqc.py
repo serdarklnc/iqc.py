@@ -9,13 +9,29 @@ st.set_page_config(page_title="Sabah QC Takip Paneli", layout="wide", initial_si
 st.title("🔬 İç Kalite Kontrol Takip Paneli")
 st.caption("Cihaz bazlı odaklanma ve anlık aksiyon takibi")
 
-# --- 1. AKILLI VE SEVİYE DUYARLI VERİ İŞLEME FONKSİYONU ---
-def qc_verisi_hazirla(df, sd_siniri):
-    benim_cihazlarim = ["INFINTY_c8000_0", "INFINTY_c8000_1", "INFINTY_c8000_2", "INFINTY_c8000_3", "INFINTY_c8000_4", "INFINTY_c8000_5", "INFINTY_c8000_6", "STANDALONE", "COBAS_E601_MRKZ", "COBAS_6000_Idrar"]
-    benim_kontrol_adlarım = ["PCCC1", "PCCC2",  "PC TM1", "PC TM2", "PC U1", "PC U2", "PC THYRO1", "PC THYRO2", "PC AMH1", "PC AMH2", "PC CARD1", "PCCARD2", "PC G1", "PC G2", "PC V1", "PC V2", "PC VITDT1", "PC VITDT2", "TDMC1", "TDMC2", "TDMC3", "PC ISD1", "PC ISD2", "PC ISD3", "PC MM1", "PC MM2", "AMM-N", "AMM-P", "CYS-1", "CYS-2", "CYS-3", "ID PCCC1", "ID PCCC2", "PN PUC", "PP PUC", "PC PCCC1", "PC PCCC2", "PC A-CCP1", "PC A-CCP2", "B2MG1", "B2MG2", "ZNCRC01", "ZNCRC02"]
+# --- 1. AKILLI, SEVİYE VE TEST GRUBU DUYARLI VERİ İŞLEME FONKSİYONU ---
+def qc_verisi_hazirla(df, sd_siniri_bio, sd_siniri_hormon):
+    benim_cihazlarim = ["INFINTY_c8000_0", "INFINTY_c8000_1", "INFINTY_c8000_2",
+                        "INFINTY_c8000_3", "INFINTY_c8000_4", "INFINTY_c8000_5",
+                        "INFINTY_c8000_6", "STANDALONE", "COBAS_E601_MRKZ", "COBAS_6000_Idrar"]
     
+    # 1. TEST KATEGORİSİ LİSTELERİ
+    biyokimya_kontrolleri = [
+        "PCCC1", "PCCC2", "AMM-N", "AMM-P", "CYS-1", "CYS-2", "CYS-3", "ID PCCC1", "ID PCCC2", 
+        "PN PUC", "PP PUC", "PC PCCC1", "PC PCCC2", "B2MG1", "B2MG2", "ZNCRC01", "ZNCRC02"
+    ]
+    
+    hormon_kontrolleri = [
+        "PC TM1", "PC TM2", "PC U1", "PC U2", "PC G1", "PC G2", 
+        "PC THYRO1", "PC THYRO2", "PC AMH1", "PC AMH2", "PC CARD1", "PCCARD2", 
+        "PC V1", "PC V2", "PC VITDT1", "PC VITDT2", "TDMC1", "TDMC2", "TDMC3", 
+        "PC ISD1", "PC ISD2", "PC ISD3", "PC MM1", "PC MM2", "PC A-CCP1", "PC A-CCP2"
+    ]
+    
+    tum_benim_kontrollerim = biyokimya_kontrolleri + hormon_kontrolleri
+
     # Filtreleme
-    filtreli_df = df[df['Cihaz'].isin(benim_cihazlarim) & df['Kontrol Adı'].isin(benim_kontrol_adlarım)].copy()
+    filtreli_df = df[df['Cihaz'].isin(benim_cihazlarim) & df['Kontrol Adı'].isin(tum_benim_kontrollerim)].copy()
     filtreli_df['Sonuç SD'] = pd.to_numeric(filtreli_df['Sonuç SD'], errors='coerce')
     
     # Kronolojik sıralama (Zaman damgasına göre)
@@ -39,6 +55,9 @@ def qc_verisi_hazirla(df, sd_siniri):
         cozulen_seviye_sayisi = 0
         
         for seviye in seviyeler:
+            # Her bir seviye için ilgili kategorinin SD sınırını belirliyoruz
+            hedef_sd = sd_siniri_hormon if seviye in hormon_kontrolleri else sd_siniri_bio
+            
             seviye_grup = test_grup[test_grup['Kontrol Adı'] == seviye]
             calismalar = seviye_grup.to_dict('records')
             
@@ -50,9 +69,10 @@ def qc_verisi_hazirla(df, sd_siniri):
                 if pd.isna(sd_val):
                     continue
                 
-                if ihlalli_calisma is None and abs(sd_val) > sd_siniri:
+                # Seçilen kategoriye ait hedef SD sınırına göre değerlendirme yapılıyor
+                if ihlalli_calisma is None and abs(sd_val) > hedef_sd:
                     ihlalli_calisma = calisma
-                elif ihlalli_calisma is not None and abs(sd_val) <= sd_siniri:
+                elif ihlalli_calisma is not None and abs(sd_val) <= hedef_sd:
                     basarili_tekrar = calisma
             
             if ihlalli_calisma is not None:
@@ -134,9 +154,13 @@ def temiz_excel_oku(dosya_objesi):
 
 with st.sidebar:
     st.header("⚙️ Kontrol Paneli")
-    sd_siniri = st.number_input("Hedef SD Sınırı Filtresi", min_value=0.0, max_value=5.0, value=1.5, step=0.1)
     
-    # YENİ FİLTRE: Sadece müdahale bekleyen aktif sorunlu testleri göster
+    # 2. AYRI SD SINIRLARI GİRDİ ALANI
+    st.subheader("🎯 Target SD Sınırları")
+    sd_siniri_bio = st.number_input("🧪 Rutin Biyokimya Target SD", min_value=0.0, max_value=5.0, value=1.5, step=0.1)
+    sd_siniri_hormon = st.number_input("🧬 Hormon / İmmünasay Target SD", min_value=0.0, max_value=5.0, value=2.0, step=0.1)
+    
+    st.markdown("---")
     sadece_bekleyenler = st.toggle("🔍 Sadece Müdahale Bekleyenleri Göster", value=False, help="Çözülmüş veya onaylanmış testleri ekrandan gizler.")
     st.markdown("---")
     
@@ -162,10 +186,11 @@ if df_raw is not None:
             except:
                 tarih_str = f" ({str(ham_tarih)})"
     
-    tum_rapor_df = qc_verisi_hazirla(df_raw, sd_siniri)
+    # Rapor iki ayrı sınır değeri ile üretiliyor
+    tum_rapor_df = qc_verisi_hazirla(df_raw, sd_siniri_bio, sd_siniri_hormon)
 
     if tum_rapor_df.empty:
-        st.info(f"Harika! Seçili kriterlerde {sd_siniri} SD sınırını aşan hiçbir test bulunmadı.")
+        st.info(f"Harika! Biyokimya (SD > {sd_siniri_bio}) ve Hormon (SD > {sd_siniri_hormon}) kriterlerinde hiçbir ihlal bulunmadı.")
     else:
         if 'aksiyonlar' not in st.session_state:
             st.session_state.aksiyonlar = {}
@@ -198,7 +223,6 @@ if df_raw is not None:
             
             unique_key = f"{secilen_cihaz}_{modul}_{test}_{index}"
             
-            # Aksiyon durumları hafızası
             if unique_key not in st.session_state.aksiyonlar:
                 st.session_state.aksiyonlar[unique_key] = {
                     "kalib_kontrol_ok": True if durum == 'Otomatik_OK' else False, 
@@ -219,7 +243,7 @@ if df_raw is not None:
                 durum_etiketi = " ✅ (Kalibrasyon/Kontrol OK)"
                 islem_tamam = True
             elif ak["karar_devam"]:
-                renk = "🟡" # Sarı / Zümrüt dönüşüm
+                renk = "🟡"
                 durum_etiketi = " 🟡 (Karar: Devam)"
                 islem_tamam = True
             elif ak["maskeleme"]:
@@ -231,7 +255,6 @@ if df_raw is not None:
                 durum_etiketi = ""
                 islem_tamam = False
 
-            # FİLTRELEME: Eğer "Sadece Müdahale Bekleyenleri Göster" açık ve işlem tamamlanmışsa kartı atla
             if sadece_bekleyenler and islem_tamam:
                 continue
 
@@ -284,7 +307,6 @@ if df_raw is not None:
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 çıktı_df.to_excel(writer, index=False, sheet_name='Sabah_Aksiyon_Raporu')
             
-            # Dinamik dosya adı belirleme
             tarih_eki = tarih_str.replace("(", "").replace(")", "").strip() if tarih_str else "Rutin"
             dosya_adi = f"QC_Aksiyon_Raporu_{tarih_eki}.xlsx"
             
