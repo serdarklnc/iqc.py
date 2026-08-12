@@ -9,15 +9,22 @@ st.set_page_config(page_title="Sabah QC Takip Paneli", layout="wide", initial_si
 st.title("🔬 İç Kalite Kontrol Takip Paneli")
 st.caption("Cihaz bazlı odaklanma ve anlık aksiyon takibi")
 
+# --- UZMAN - CİHAZ EŞLEŞTİRME HARİTASI ---
+# İleride uzman veya cihaz sorumlulukları değişirse sadece bu sözlüğü güncellemeniz yeterlidir.
+UZMAN_HARITASI = {
+    "Uzm_SK": ["INFINTY_c8000_0", "INFINTY_c8000_1", "STANDALONE", "COBAS_E601_MRKZ", "COBAS_6000_Idrar"],
+    "Uzm_CE": ["INFINTY_c8000_4", "INFINTY_c8000_5", "INFINTY_c8000_6"],
+    "Uzm_KY": ["INFINTY_c8000_2", "INFINTY_c8000_3"]
+}
+
 # --- 1. AKILLI, SEVİYE VE TEST GRUBU DUYARLI VERİ İŞLEME FONKSİYONU ---
 def qc_verisi_hazirla(df, sd_siniri_bio, sd_siniri_hormon):
-    benim_cihazlarim = ["INFINTY_c8000_0", "INFINTY_c8000_1", "INFINTY_c8000_2",
-                        "INFINTY_c8000_3", "INFINTY_c8000_4", "INFINTY_c8000_5",
-                        "INFINTY_c8000_6", "STANDALONE", "COBAS_E601_MRKZ", "COBAS_6000_Idrar"]
+    benim_cihazlarim = ["INFINTY_c8000_0", "INFINTY_c8000_1", "INFINTY_c8000_2", "INFINTY_c8000_3", "INFINTY_c8000_4", "INFINTY_c8000_5", "INFINTY_c8000_6", "STANDALONE", "COBAS_E601_MRKZ", "COBAS_6000_Idrar"]
     
     # 1. TEST KATEGORİSİ LİSTELERİ
     biyokimya_kontrolleri = [
-        "PCCC1", "PCCC2", "AMM-N", "AMM-P", "CYS-1", "CYS-2", "CYS-3", "ID PCCC1", "ID PCCC2", 
+        "PCCC1", "PCCC2", 
+        "AMM-N", "AMM-P", "CYS-1", "CYS-2", "CYS-3", "ID PCCC1", "ID PCCC2", 
         "PN PUC", "PP PUC", "PC PCCC1", "PC PCCC2", "B2MG1", "B2MG2", "ZNCRC01", "ZNCRC02"
     ]
     
@@ -55,7 +62,6 @@ def qc_verisi_hazirla(df, sd_siniri_bio, sd_siniri_hormon):
         cozulen_seviye_sayisi = 0
         
         for seviye in seviyeler:
-            # Her bir seviye için ilgili kategorinin SD sınırını belirliyoruz
             hedef_sd = sd_siniri_hormon if seviye in hormon_kontrolleri else sd_siniri_bio
             
             seviye_grup = test_grup[test_grup['Kontrol Adı'] == seviye]
@@ -69,7 +75,6 @@ def qc_verisi_hazirla(df, sd_siniri_bio, sd_siniri_hormon):
                 if pd.isna(sd_val):
                     continue
                 
-                # Seçilen kategoriye ait hedef SD sınırına göre değerlendirme yapılıyor
                 if ihlalli_calisma is None and abs(sd_val) > hedef_sd:
                     ihlalli_calisma = calisma
                 elif ihlalli_calisma is not None and abs(sd_val) <= hedef_sd:
@@ -155,7 +160,6 @@ def temiz_excel_oku(dosya_objesi):
 with st.sidebar:
     st.header("⚙️ Kontrol Paneli")
     
-    # 2. AYRI SD SINIRLARI GİRDİ ALANI
     st.subheader("🎯 Target SD Sınırları")
     sd_siniri_bio = st.number_input("🧪 Rutin Biyokimya Target SD", min_value=0.0, max_value=5.0, value=1.5, step=0.1)
     sd_siniri_hormon = st.number_input("🧬 Hormon / İmmünasay Target SD", min_value=0.0, max_value=5.0, value=2.0, step=0.1)
@@ -186,7 +190,6 @@ if df_raw is not None:
             except:
                 tarih_str = f" ({str(ham_tarih)})"
     
-    # Rapor iki ayrı sınır değeri ile üretiliyor
     tum_rapor_df = qc_verisi_hazirla(df_raw, sd_siniri_bio, sd_siniri_hormon)
 
     if tum_rapor_df.empty:
@@ -194,6 +197,14 @@ if df_raw is not None:
     else:
         if 'aksiyonlar' not in st.session_state:
             st.session_state.aksiyonlar = {}
+
+        # YENİ: Yan Menüde Uzman Sorumluluk Özetini Gösterme
+        with st.sidebar:
+            st.subheader("👨‍⚕️ Uzman İhlal Dağılımı")
+            for uzm_adi, uzm_cihazlari in UZMAN_HARITASI.items():
+                uzm_ihlal_sayisi = len(tum_rapor_df[tum_rapor_df['Cihaz'].isin(uzm_cihazlari)])
+                st.caption(f"• **{uzm_adi}**: {uzm_ihlal_sayisi} ihlalli durum")
+            st.markdown("---")
 
         ihlalli_cihazlar = sorted(tum_rapor_df['Cihaz'].unique())
         
@@ -271,7 +282,7 @@ if df_raw is not None:
                 
                 ak["not"] = st.text_input("Açıklama / Durum Notu:", value=ak["not"], key=f"txt_{unique_key}")
 
-        # --- 4. TÜM VERİLERİ DERLEYİP EXCEL DOSYASI YAPMA ---
+        # --- 4. UZMAN BAZLI ÇOKLU SHEETS EXCEL DOSYASI OLUŞTURMA ---
         st.markdown("---")
         st.subheader("💾 Gün Sonu Kapanış")
         
@@ -302,20 +313,31 @@ if df_raw is not None:
             if 'Durum' in çıktı_df.columns:
                 çıktı_df = çıktı_df.drop(columns=['Durum'])
             
+            # --- ÇOKLU EXCEL SEKME (SHEET) MANTIĞI ---
             import io
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                çıktı_df.to_excel(writer, index=False, sheet_name='Sabah_Aksiyon_Raporu')
+                # 1. Genel Sayfa (Tüm Cihazlar Birlikte)
+                çıktı_df.to_excel(writer, index=False, sheet_name='Tüm_Cihazlar_Genel')
+                
+                # 2. Her Uzman İçin Ayrı Sayfa
+                for uzm_adi, uzm_cihazlari in UZMAN_HARITASI.items():
+                    uzm_df = çıktı_df[çıktı_df['Cihaz'].isin(uzm_cihazlari)].copy()
+                    if not uzm_df.empty:
+                        uzm_df.to_excel(writer, index=False, sheet_name=uzm_adi)
+                    else:
+                        # İhlal olmasa bile sekme açıp bilgi notu bırakıyoruz
+                        pd.DataFrame({'Bilgi': ['Bu uzmana ait cihazlarda hedef sınırı aşan ihlalli test bulunmamaktadır.']}).to_excel(writer, index=False, sheet_name=uzm_adi)
             
             tarih_eki = tarih_str.replace("(", "").replace(")", "").strip() if tarih_str else "Rutin"
             dosya_adi = f"QC_Aksiyon_Raporu_{tarih_eki}.xlsx"
             
             st.download_button(
-                label="📥 Tüm Listeyi Excel Olarak İndir",
+                label="📥 Tüm Listeyi (Uzman Sekmeli) Excel Olarak İndir",
                 data=buffer.getvalue(),
                 file_name=dosya_adi,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-            st.success("Tüm cihazlardaki değerlendirmeleriniz tek bir dosyada birleştirildi!")
+            st.success("Genel ve uzman bazlı sekmelerle Excel raporunuz başarıyla hazırlandı!")
 else:
     st.info("Lütfen çalışmak istediğiniz excel dosyasını uygulamanın bulunduğu klasöre yükleyin.")
