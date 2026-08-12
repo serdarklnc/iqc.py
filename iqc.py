@@ -288,38 +288,72 @@ if df_raw is not None:
         
         if st.button("Tüm Cihazların Değerlendirmesini Derle ve Excel Raporu Hazırla"):
             aksiyon_listesi = []
+            durum_ok_listesi = []
+            atlama_durumlari = [] # Filtreleme için durum kontrolü
             
             for index, row in tum_rapor_df.iterrows():
                 u_key = f"{row['Cihaz']}_{row['Cihaz Modül No']}_{row['Test']}_{index}"
+                durum = row['Durum']
                 
-                if u_key in st.session_state.aksiyonlar:
-                    ak = st.session_state.aksiyonlar[u_key]
-                    durumlar = []
-                    if ak["kalib_kontrol_ok"]: durumlar.append("Kalibrasyon/Kontrol OK")
-                    if ak["karar_devam"]: durumlar.append("Karar: Devam (Çalışmaya Verildi)")
-                    if ak["maskeleme"]: durumlar.append("Test Maskelendi")
-                    
-                    # İşlem yapıldıysa yaz, yapılmadıysa "Aksiyon Alınmadı" YERİNE BOŞ BIRAK
-                    aksiyon_str = ", ".join(durumlar) if durumlar else ""
-                    if ak["not"]:
-                        aksiyon_str += f" (Not: {ak['not']})" if aksiyon_str else f"Not: {ak['not']}"
+                ak = st.session_state.aksiyonlar.get(u_key, {
+                    "kalib_kontrol_ok": False, "maskeleme": False, "karar_devam": False, "not": ""
+                })
+
+                # 1. OK Sütunu Bilgisi (Çözülmüş Durum Tespiti)
+                if durum == 'Otomatik_OK':
+                    durum_ok_str = "✅ OK (Tekrarı Başarılı)"
+                    islem_tamam = True
+                elif ak["kalib_kontrol_ok"]:
+                    durum_ok_str = "✅ OK (Kalibrasyon/Kontrol)"
+                    islem_tamam = True
+                elif ak["karar_devam"]:
+                    durum_ok_str = "🟡 OK (Karar: Devam)"
+                    islem_tamam = True
+                elif ak["maskeleme"]:
+                    durum_ok_str = "⛔ Maskeli"
+                    islem_tamam = True
                 else:
-                    aksiyon_str = "" # Kağıt çıktısı için boş bırakıyoruz
+                    durum_ok_str = "" # Müdahale bekliyor, boş bırak
+                    islem_tamam = False
+
+                durum_ok_listesi.append(durum_ok_str)
+                atlama_durumlari.append(islem_tamam)
+
+                # 2. Aksiyon ve Not Metni (İşlem yapılmadıysa boş)
+                durumlar = []
+                if ak["kalib_kontrol_ok"] and durum != 'Otomatik_OK': durumlar.append("Kalibrasyon/Kontrol OK")
+                if ak["karar_devam"]: durumlar.append("Karar: Devam (Çalışmaya Verildi)")
+                if ak["maskeleme"]: durumlar.append("Test Maskelendi")
+                
+                aksiyon_str = ", ".join(durumlar) if durumlar else ""
+                if ak["not"] and durum != 'Otomatik_OK':
+                    aksiyon_str += f" (Not: {ak['not']})" if aksiyon_str else f"Not: {ak['not']}"
                     
                 aksiyon_listesi.append(aksiyon_str)
             
+            # Veri Çerçevesini Oluşturma
             çıktı_df = tum_rapor_df.copy()
+            çıktı_df['Durum / Tekrar OK'] = durum_ok_listesi
             çıktı_df['Alınan Aksiyon ve Durum'] = aksiyon_listesi
             
+            # 'Durum' geçici kolonunu kaldırıyoruz
             if 'Durum' in çıktı_df.columns:
                 çıktı_df = çıktı_df.drop(columns=['Durum'])
-            
-            # --- ÇOKLU EXCEL SEKME (SHEET) VE OTOMATİK SÜTUN GENİŞLİĞİ MANTIĞI ---
+
+            # FİLTRELEME: Eğer "Sadece Müdahale Bekleyenleri Göster" açıksa çözülenleri Excel'den çıkarıyoruz
+            if sadece_bekleyenler:
+                bekleyen_maskesi = [not t for t in atlama_durumlari]
+                çıktı_df = çıktı_df[bekleyen_maskesi].copy()
+
+            # --- ÇOKLU EXCEL SEKME VE GENİŞLİK AYARLAMA ---
             import io
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 # 1. Genel Sayfa
-                çıktı_df.to_excel(writer, index=False, sheet_name='Tüm_Cihazlar_Genel')
+                if not çıktı_df.empty:
+                    çıktı_df.to_excel(writer, index=False, sheet_name='Tüm_Cihazlar_Genel')
+                else:
+                    pd.DataFrame({'Bilgi': ['Seçili kriterlerde aktif müdahale bekleyen test bulunmamaktadır.']}).to_excel(writer, index=False, sheet_name='Tüm_Cihazlar_Genel')
                 
                 # 2. Her Uzman İçin Ayrı Sayfa
                 for uzm_adi, uzm_cihazlari in UZMAN_HARITASI.items():
@@ -327,21 +361,19 @@ if df_raw is not None:
                     if not uzm_df.empty:
                         uzm_df.to_excel(writer, index=False, sheet_name=uzm_adi)
                     else:
-                        pd.DataFrame({'Bilgi': ['Bu uzmana ait cihazlarda hedef sınırı aşan ihlalli test bulunmamaktadır.']}).to_excel(writer, index=False, sheet_name=uzm_adi)
+                        pd.DataFrame({'Bilgi': ['Bu uzmana ait cihazlarda aktif müdahale bekleyen test bulunmamaktadır.']}).to_excel(writer, index=False, sheet_name=uzm_adi)
 
-                # --- SÜTUN GENİŞLİKLERİNİ METNE GÖRE OTOMATİK AYARLAMA SİHRİ ---
+                # OTOMATİK SÜTUN GENİŞLİĞİ
                 for sheet_name in writer.sheets:
                     worksheet = writer.sheets[sheet_name]
                     for col in worksheet.columns:
                         max_len = 0
-                        col_letter = col[0].column_letter # A, B, C...
+                        col_letter = col[0].column_letter
                         for cell in col:
                             if cell.value is not None:
-                                # Metin uzunluğunu hesapla (Türkçe karakter ve uzun başlıklara tolerans ekle)
                                 val_str = str(cell.value)
                                 if len(val_str) > max_len:
                                     max_len = len(val_str)
-                        # Sütun genişliğini en uzun metinden biraz daha geniş yapıyoruz
                         worksheet.column_dimensions[col_letter].width = max(max_len + 4, 12)
             
             tarih_eki = tarih_str.replace("(", "").replace(")", "").strip() if tarih_str else "Rutin"
@@ -353,6 +385,6 @@ if df_raw is not None:
                 file_name=dosya_adi,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-            st.success("Genel ve uzman sekmeli Excel raporunuz (sütun genişlikleri ayarlanmış olarak) başarıyla hazırlandı!")
+            st.success("Filtre seçiminize uygun olarak Excel raporunuz başarıyla hazırlandı!")
 else:
     st.info("Lütfen çalışmak istediğiniz excel dosyasını uygulamanın bulunduğu klasöre yükleyin.")
