@@ -299,11 +299,12 @@ if df_raw is not None:
                     if ak["karar_devam"]: durumlar.append("Karar: Devam (Çalışmaya Verildi)")
                     if ak["maskeleme"]: durumlar.append("Test Maskelendi")
                     
-                    aksiyon_str = ", ".join(durumlar) if durumlar else "Aksiyon Alınmadı"
+                    # İşlem yapıldıysa yaz, yapılmadıysa "Aksiyon Alınmadı" YERİNE BOŞ BIRAK
+                    aksiyon_str = ", ".join(durumlar) if durumlar else ""
                     if ak["not"]:
-                        aksiyon_str += f" (Not: {ak['not']})"
+                        aksiyon_str += f" (Not: {ak['not']})" if aksiyon_str else f"Not: {ak['not']}"
                 else:
-                    aksiyon_str = "Aksiyon Alınmadı"
+                    aksiyon_str = "" # Kağıt çıktısı için boş bırakıyoruz
                     
                 aksiyon_listesi.append(aksiyon_str)
             
@@ -313,11 +314,11 @@ if df_raw is not None:
             if 'Durum' in çıktı_df.columns:
                 çıktı_df = çıktı_df.drop(columns=['Durum'])
             
-            # --- ÇOKLU EXCEL SEKME (SHEET) MANTIĞI ---
+            # --- ÇOKLU EXCEL SEKME (SHEET) VE OTOMATİK SÜTUN GENİŞLİĞİ MANTIĞI ---
             import io
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                # 1. Genel Sayfa (Tüm Cihazlar Birlikte)
+                # 1. Genel Sayfa
                 çıktı_df.to_excel(writer, index=False, sheet_name='Tüm_Cihazlar_Genel')
                 
                 # 2. Her Uzman İçin Ayrı Sayfa
@@ -326,8 +327,22 @@ if df_raw is not None:
                     if not uzm_df.empty:
                         uzm_df.to_excel(writer, index=False, sheet_name=uzm_adi)
                     else:
-                        # İhlal olmasa bile sekme açıp bilgi notu bırakıyoruz
                         pd.DataFrame({'Bilgi': ['Bu uzmana ait cihazlarda hedef sınırı aşan ihlalli test bulunmamaktadır.']}).to_excel(writer, index=False, sheet_name=uzm_adi)
+
+                # --- SÜTUN GENİŞLİKLERİNİ METNE GÖRE OTOMATİK AYARLAMA SİHRİ ---
+                for sheet_name in writer.sheets:
+                    worksheet = writer.sheets[sheet_name]
+                    for col in worksheet.columns:
+                        max_len = 0
+                        col_letter = col[0].column_letter # A, B, C...
+                        for cell in col:
+                            if cell.value is not None:
+                                # Metin uzunluğunu hesapla (Türkçe karakter ve uzun başlıklara tolerans ekle)
+                                val_str = str(cell.value)
+                                if len(val_str) > max_len:
+                                    max_len = len(val_str)
+                        # Sütun genişliğini en uzun metinden biraz daha geniş yapıyoruz
+                        worksheet.column_dimensions[col_letter].width = max(max_len + 4, 12)
             
             tarih_eki = tarih_str.replace("(", "").replace(")", "").strip() if tarih_str else "Rutin"
             dosya_adi = f"QC_Aksiyon_Raporu_{tarih_eki}.xlsx"
@@ -338,6 +353,6 @@ if df_raw is not None:
                 file_name=dosya_adi,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-            st.success("Genel ve uzman bazlı sekmelerle Excel raporunuz başarıyla hazırlandı!")
+            st.success("Genel ve uzman sekmeli Excel raporunuz (sütun genişlikleri ayarlanmış olarak) başarıyla hazırlandı!")
 else:
     st.info("Lütfen çalışmak istediğiniz excel dosyasını uygulamanın bulunduğu klasöre yükleyin.")
