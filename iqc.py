@@ -29,7 +29,7 @@ def qc_verisi_hazirla(df, sd_siniri_bio, sd_siniri_hormon):
     ]
     
     hormon_kontrolleri = [
-        "PC TM1", "PC TM2", "PC U1", "PC U2", "PC G1", "PC G2", 
+        "PC TM1", "PC TM2", "PC U1", "PC U2", "PC G1", "PC G2", "PC TAB2 L1", "PC TAB2 L2"
         "PC THYRO1", "PC THYRO2", "PC AMH1", "PC AMH2", "PC CARD1", "PCCARD2", 
         "PC V1", "PC V2", "PC VITDT1", "PC VITDT2", "TDMC1", "TDMC2", "TDMC3", 
         "PC ISD1", "PC ISD2", "PC ISD3", "PC MM1", "PC MM2", "PC A-CCP1", "PC A-CCP2"
